@@ -709,23 +709,11 @@ ENDIF
 ; &8078 referenced 1 time by &807d
 IF SCSI_MOD
 .wait_for_bsy_to_assert
-;    pha
-;    tya
-;    pha
-;    ldy #5
-.retry_read_scsi_status
     jsr read_scsi_status
     and #status_bsy_mask
     bne good_response
-;    dey
-;    bne retry_read_scsi_status
-;    pla
-;    pla
     jmp restore_drive_number_then_raise_error
 .good_response
-;    pla
-;    tay
-;    pla
 ELSE
 .wait_for_bsy_to_assert
     jsr read_scsi_status                                              ; 8078: 20 56 80     V.
