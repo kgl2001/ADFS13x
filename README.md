@@ -10,29 +10,29 @@ Download the ```adfs13x.asm``` file, and build using ```BeebASM```:
 
 There are five different build options, which can be adjusted at the top of the ```adfs13x.asm``` file
 
-- SCSI_MOD: Select ```TRUE``` to patch the SCSI drivers ```FALSE``` to build without any patching
-- PATCH_ROM_VER: Select ```TRUE``` will change the version to 1.3x ```FALSE``` will keep the version at 1.30
-- PATCH_UNSUPPORTED_OSFILE: Select ```TRUE``` to fix bug in OSFILE ```FALSE``` to leave OSFILE code
-- PRESERVE_PADDING: Select ```TRUE``` to retain unused code and data ```FALSE``` to strip out unused code and data
-- DITCH_FREE: Select ```TRUE``` to removed code associated with the \*FREE command ```FALSE``` to keep the \*FREE code. 
+- SCSI_MOD: Select ```TRUE``` to patch the SCSI drivers. ```FALSE``` to build without any patching.
+- PATCH_ROM_VER: Select ```TRUE``` will change the version to 1.3x. ```FALSE``` will keep the version at 1.30.
+- PATCH_UNSUPPORTED_OSFILE: Select ```TRUE``` to fix bug in OSFILE. ```FALSE``` to leave OSFILE code.
+- PRESERVE_PADDING: Select ```TRUE``` to retain unused code and data. ```FALSE``` to strip out unused code and data.
+- DITCH_FREE: Select ```TRUE``` to removed code associated with the \*FREE command. ```FALSE``` to keep the \*FREE code. 
 
 DITCH_FREE was used to free up some ROM space during development of the patch. There is enough space to apply the patch and keep the \*FREE command so this should be left at false.
 
 To rebuild the original 1.30 ROM, set the options as follows:
 
-SCSI_MOD = ```FALSE```
-PATCH_ROM_VER = ```FALSE```
-PATCH_UNSUPPORTED_OSFILE = ```FALSE```
-PRESERVE_PADDING = ```TRUE```
-DITCH_FREE = ```FALSE```
+SCSI_MOD = ```FALSE```  
+PATCH_ROM_VER = ```FALSE```  
+PATCH_UNSUPPORTED_OSFILE = ```FALSE```  
+PRESERVE_PADDING = ```TRUE```  
+DITCH_FREE = ```FALSE```  
 
 and to build the SCSI-ID patched version:
 
-SCSI_MOD = ```TRUE```
-PATCH_ROM_VER = ```TRUE```
-PATCH_UNSUPPORTED_OSFILE = ```TRUE```
-PRESERVE_PADDING = ```FALSE```
-DITCH_FREE = ```FALSE```
+SCSI_MOD = ```TRUE```  
+PATCH_ROM_VER = ```TRUE```  
+PATCH_UNSUPPORTED_OSFILE = ```TRUE```  
+PRESERVE_PADDING = ```FALSE```  
+DITCH_FREE = ```FALSE```  
 
 # Patched version of ADFS 1.30
 
