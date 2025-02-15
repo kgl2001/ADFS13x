@@ -1,4 +1,5 @@
 SCSI_MOD = TRUE
+CODE_SQUASH = TRUE
 PATCH_ROM_VER = TRUE
 PATCH_UNSUPPORTED_OSFILE = TRUE
 PRESERVE_PADDING = FALSE
@@ -574,6 +575,13 @@ ENDIF
 .c8055
     rts                                                               ; 8055: 60          `
 
+IF CODE_SQUASH
+.get_drive_number_in_a
+    ldy #6
+    lda (scsi_command_control_block_addr),y
+    ora current_drive_number
+    rts
+ENDIF
 
 ; -------------------------------------------------------------------------------
 ; Wait for the SCSI target to assert REQ or de-assert BSY
@@ -640,9 +648,13 @@ ENDIF
 
 IF SCSI_MOD
 .get_drive_clear_y_then_initiate_drive_communications
-    ldy #6 ; disc sector MSB. The upper 3 bits contain the drive LUN
-    lda (scsi_command_control_block_addr),y ;drive number is stored here if called from OSGBPB
-    ora current_drive_number ; at other times drive number is stored here
+IF CODE_SQUASH
+    jsr get_drive_number_in_a
+ELSE
+    ldy #6
+    lda (scsi_command_control_block_addr),y
+    ora current_drive_number
+ENDIF
     and #&e0 ; mask out sectors from disc sector MSB
 ENDIF
 
@@ -652,8 +664,8 @@ ENDIF
 ; &8067 referenced 1 time by &aaca
 .initiate_drive_communications
 
-; KLNOTE:
-; This is one of the main patches. Previously the SCSI ID was
+; Coupled with get_drive_clear_y_then_initiate_drive_communications,
+; this is one of the main patches. Previously the SCSI ID was
 ; fixed at 0. This modification now looks at the currently selected
 ; drive, and sets the SCSI ID to match. The drive number is held in
 ; the top 3 bits of the register, so they need to be shuffled low.
@@ -701,27 +713,35 @@ ENDIF
 ; 
     sta scsi_data_reg                                                 ; 8072: 8d 40 fc    .@.
     sta scsi_select_reg                                               ; 8075: 8d 42 fc    .B.
-; KLNOTE:
 ; This mod is to prevent the code getting stuck in a loop when trying
 ; to mount a non existent drive, waiting for that drive to assert BSY.
-;
-; KLTODO: Do I need a big timeout loop like this???
-; &8078 referenced 1 time by &807d
-IF SCSI_MOD
-.wait_for_bsy_to_assert
-    jsr read_scsi_status
-    and #status_bsy_mask
-    bne good_response
-    jmp restore_drive_number_then_raise_error
-.good_response
-ELSE
 .wait_for_bsy_to_assert
     jsr read_scsi_status                                              ; 8078: 20 56 80     V.
     and #status_bsy_mask                                              ; 807b: 29 02       ).
+IF SCSI_MOD
+    bne good_response
+; if error occurred when initiating a unit stop, then don't generate error, and return with
+; carry clear instead, otherwise raise error.
+    ldy #&5
+    lda (scsi_command_control_block_addr),y
+    cmp #&1b
+    bne raise_not_ready_error
+    ldy #&9
+    lda (scsi_command_control_block_addr),y
+    bne raise_not_ready_error
+    clc
+    rts
+; raise error, unless error was during a unit stop.
+.raise_not_ready_error
+    jmp restore_drive_number_then_raise_error
+; if no error occurred, then return with carry set.
+.good_response
+    sec
+ELSE
     beq wait_for_bsy_to_assert                                        ; 807d: f0 f9       ..
 ENDIF
 ; &807f referenced 1 time by &80a7
-.c807f
+.nearby_rts
     rts                                                               ; 807f: 60          `
 
 ; &8080 referenced 4 times by &809f, &8af8, &ab2d, &ac96
@@ -751,7 +771,7 @@ ENDIF
 ; &80a4 referenced 1 time by &80c4
 .c80a4
     jsr c80c6                                                         ; 80a4: 20 c6 80     ..
-    beq c807f                                                         ; 80a7: f0 d6       ..
+    beq nearby_rts                                                    ; 80a7: f0 d6       ..
     cmp #4                                                            ; 80a9: c9 04       ..
     bne c80be                                                         ; 80ab: d0 11       ..
     ldy #&19                                                          ; 80ad: a0 19       ..
@@ -782,9 +802,13 @@ ENDIF
     jsr sub_cba00                                                     ; 80cc: 20 00 ba     ..
     beq c80ec                                                         ; 80cf: f0 1b       ..
     pha                                                               ; 80d1: 48          H
+IF CODE_SQUASH
+    jsr get_drive_number_in_a
+ELSE
     ldy #6                                                            ; 80d2: a0 06       ..
-    lda (scsi_command_control_block_addr),y                           ; 80d4: b1 b0       ..
-    ora current_drive_number                                          ; 80d6: 0d 17 11    ...
+    lda (scsi_command_control_block_addr),y
+    ora current_drive_number
+ENDIF
     sta l10d2                                                         ; 80d9: 8d d2 10    ...
     iny                                                               ; 80dc: c8          .
     lda (scsi_command_control_block_addr),y                           ; 80dd: b1 b0       ..
@@ -798,16 +822,24 @@ ENDIF
 .c80ec
     rts                                                               ; 80ec: 60          `
 
+IF SCSI_MOD
+.indirect_to_c81b1
+    jmp c81b1
+ENDIF
+
 ; &80ed referenced 1 time by &80ca
 .setup_hdd_command_block_table
-    ldy #6                                                            ; 80ed: a0 06       ..
-    lda (scsi_command_control_block_addr),y                           ; 80ef: b1 b0       ..
-    ora current_drive_number                                          ; 80f1: 0d 17 11    ...
-    bmi setup_floppy_command_block_table                              ; 80f4: 30 d6       0.
-IF SCSI_MOD
-    jsr get_drive_clear_y_then_initiate_drive_communications
+IF CODE_SQUASH
+    jsr get_drive_number_in_a
 ELSE
+    ldy #6                                                            ; 80ed: a0 06       ..
+    lda (scsi_command_control_block_addr),y
+    ora current_drive_number
+ENDIF
+    bmi setup_floppy_command_block_table                              ; 80f4: 30 d6       0.
     jsr clear_y_then_initiate_drive_communications                    ; 80f6: 20 65 80     e.
+IF SCSI_MOD
+    bcc indirect_to_c81b1
 ENDIF
     iny                                                               ; 80f9: c8          .
     lda (scsi_command_control_block_addr),y                           ; 80fa: b1 b0       ..
@@ -831,9 +863,13 @@ ENDIF
     ldy #5                                                            ; 8114: a0 05       ..
     lda (scsi_command_control_block_addr),y                           ; 8116: b1 b0       ..
     jsr scsi_write_data                                               ; 8118: 20 1b 83     ..
+IF CODE_SQUASH
+    jsr get_drive_number_in_a
+ELSE
     iny                                                               ; 811b: c8          .
-    lda (scsi_command_control_block_addr),y                           ; 811c: b1 b0       ..
-    ora current_drive_number                                          ; 811e: 0d 17 11    ...
+    lda (scsi_command_control_block_addr),y
+    ora current_drive_number
+ENDIF
     sta l1133                                                         ; 8121: 8d 33 11    .3.
 IF SCSI_MOD
     and #&1f ; strip out LUN before writing to drive.
@@ -1058,10 +1094,8 @@ ENDIF
     plp                                                               ; 8237: 28          (
     bvs c8200                                                         ; 8238: 70 c6       p.
 
-; KLTODO:
 ; This routine sends &03 dd &00 &00 &00 &00 to the drive
 ; We need to force the LUN (dd) to 0 here, so the first mod is definitely required.
-; SQUASH (DONE): Increase y loop by one with iny and ditch first jsr scsi_write_data below.
 ; Note: jsr scsi_write_data returns with A=0, so don't need to declare before the
 ; second call to scsi_write_data.
 ;
@@ -2464,8 +2498,6 @@ ENDIF
     beq loop_c8a3c                                                    ; 8a40: f0 fa       ..
     jmp error_handling                                                ; 8a42: 4c 9a 82    L..
 
-; KLNOTE:
-; Update control block so that it does an operation in multiple of full 256 byte blocks.
 ; &8a45 referenced 2 times by &8a3d, &9d5c
 .finalise_osword_cb_and_do_command
     lda osword_control_block + 5                                      ; 8a45: ad 1a 10    ...
@@ -2938,6 +2970,13 @@ ENDIF
     jsr ReloadFSMandDIR_ThenBRK                                       ; 8d16: 20 48 83     H.
     equs &c3, "Locked", 0                                             ; 8d19: c3 4c 6f... .Lo
 
+IF CODE_SQUASH
+.test_drive_number
+    lda l11b6,x
+    and #&e0
+    cmp current_drive_number
+    rts
+ENDIF
 ; &8d21 referenced 2 times by &8d14, &b2ef
 .c8d21
     ldx #9                                                            ; 8d21: a2 09       ..
@@ -2945,9 +2984,13 @@ ENDIF
 .c8d23
     lda l11ac,x                                                       ; 8d23: bd ac 11    ...
     beq c8d69                                                         ; 8d26: f0 41       .A
+IF CODE_SQUASH
+    jsr test_drive_number
+ELSE
     lda l11b6,x                                                       ; 8d28: bd b6 11    ...
     and #&e0                                                          ; 8d2b: 29 e0       ).
     cmp current_drive_number                                          ; 8d2d: cd 17 11    ...
+ENDIF
     bne c8d69                                                         ; 8d30: d0 37       .7
     lda l11e8,x                                                       ; 8d32: bd e8 11    ...
     cmp l1114                                                         ; 8d35: cd 14 11    ...
@@ -3378,8 +3421,12 @@ ENDIF
     lda l1116                                                         ; 8fa8: ad 16 11    ...
     sta osword_control_block + 6                                      ; 8fab: 8d 1b 10    ...
     jsr set_xy_then_do_osword_command                                 ; 8fae: 20 87 82     ..
+IF CODE_SQUASH
+    jsr get_drive_lo_in_x
+ELSE
     lda current_drive_number                                          ; 8fb1: ad 17 11    ...
     jsr move_drive_number_lo_return_in_x                              ; 8fb4: 20 79 b5     y.
+ENDIF
     lda l0ffc                                                         ; 8fb7: ad fc 0f    ...
     sta l1122,x                                                       ; 8fba: 9d 22 11    .".
     lda system_via_t1c_l                                              ; 8fbd: ad 44 fe    .D.
@@ -3396,6 +3443,13 @@ ENDIF
     sta zp_adfs_flags                                                 ; 8fda: 85 cd       ..
     lda #0                                                            ; 8fdc: a9 00       ..
     rts                                                               ; 8fde: 60          `
+
+IF CODE_SQUASH
+.get_drive_lo_in_x
+    lda current_drive_number
+    jsr move_drive_number_lo_return_in_x
+    rts
+ENDIF
 
 ; &8fdf referenced 13 times by &8be5, &8cb3, &8cd7, &94e7, &993d, &9a2d, &9c43, &a586, &a672, &b20e, &b2e6, &b301, &b36d
 .sub_c8fdf
@@ -5646,7 +5700,7 @@ ENDIF
 .print_ADFS130_txt
     jsr print_message_and_fall_through                                ; 9da7: 20 a0 92     ..
 IF PATCH_ROM_VER
-    equs &0d, "ADFS 1.3x SCSI ID 0..3", &8d
+    equs &0d, "ADFS 1.3x", &8d
 ELSE
     equs &0d, "Advanced DFS 1.30", &8d                                ; 9daa: 0d 41 64... .Ad
 ENDIF
@@ -6116,7 +6170,7 @@ ENDIF
     bne ca049                                                         ; a0be: d0 89       ..
     jmp not_found_error                                               ; a0c0: 4c d7 8b    L..
 
-; KLNOTE: Relocated to avoid page boundary issues.
+; Relocated to avoid page boundary issues.
 IF SCSI_MOD
 .argument_string_table
 .list_spec_txt
@@ -6142,7 +6196,6 @@ IF HI(argument_string_table) != HI(argument_string_table_end)
 ENDIF
 ENDIF
 
-; KLNOTE:
 ; Temporarily preventing routine from trying to stop all 4 drives
 ; because trying to stop a non existent drive will currently cause
 ; a not found error. For now, this routine will only stop the
@@ -6156,26 +6209,27 @@ ENDIF
     jsr close_command                                                 ; a0cb: 20 b3 b1     ..
 ; &a0ce referenced 1 time by &a0c9
 .ca0ce
-IF SCSI_MOD = FALSE
     lda #&60 ; '`'                                                    ; a0ce: a9 60       .`
     sta current_drive_number                                          ; a0d0: 8d 17 11    ...
 ; &a0d3 referenced 1 time by &a0e3
 .loop_ca0d3
-ENDIF
     ldx #<osword_1b_stop_control_block                                ; a0d3: a2 ea       ..
     ldy #>osword_1b_stop_control_block                                ; a0d5: a0 a0       ..
     jsr do_osword_command_with_control_block_in_xy                    ; a0d7: 20 89 80     ..
-IF SCSI_MOD = FALSE
+IF SCSI_MOD
+; This second call is to make sure that a drive that has not been
+; previously mounted / initialised will stop when requested.
+; The first call will do the initialisation required to enable
+; this second unit stop command to work.
+    jsr do_osword_command_with_control_block_in_xy                    ; a0d7: 20 89 80     ..
+ENDIF
     lda current_drive_number                                          ; a0da: ad 17 11    ...
     sec                                                               ; a0dd: 38          8
     sbc #&20 ; ' '                                                    ; a0de: e9 20       .
     sta current_drive_number                                          ; a0e0: 8d 17 11    ...
     bcs loop_ca0d3                                                    ; a0e3: b0 ee       ..
-ENDIF
     pla                                                               ; a0e5: 68          h
-IF SCSI_MOD = FALSE
     sta current_drive_number                                          ; a0e6: 8d 17 11    ...
-ENDIF
     rts                                                               ; a0e9: 60          `
 
 .osword_1b_stop_control_block
@@ -7268,9 +7322,7 @@ ENDIF
     sta l0101,x                                                       ; a788: 9d 01 01    ...
     lda #>(la7a2 - 1)                                                 ; a78b: a9 a7       ..
     sta l0102,x                                                       ; a78d: 9d 02 01    ...
-; KLNOTE
-; This is just a SQUASH opportunity.
-IF SCSI_MOD
+IF CODE_SQUASH
 .pull_registers
 ENDIF
     pla                                                               ; a790: 68          h
@@ -7307,9 +7359,7 @@ ENDIF
     sta l10d8                                                         ; a7b0: 8d d8 10    ...
     sta l10ce                                                         ; a7b3: 8d ce 10    ...
     sta l10d5                                                         ; a7b6: 8d d5 10    ...
-; KLNOTE
-; This is just a SQUASH opportunity.
-IF SCSI_MOD
+IF CODE_SQUASH
     jmp pull_registers
 ELSE
     pla                                                               ; a7b9: 68          h
@@ -7752,9 +7802,7 @@ ENDIF
     bpl loop_caaa8                                                    ; aac1: 10 e5       ..
     jmp ca976                                                         ; aac3: 4c 76 a9    Lv.
 
-; KLNOTE:
 ; We arrive here with either 08 (read) or 0a (write) in A.
-
 ; &aac6 referenced 2 times by &ab4f, &acb4
 .scsi_command_bget_bput_sector
     pha                                                               ; aac6: 48          H
@@ -8780,9 +8828,13 @@ ENDIF
 .cb21a
     lda l11ac,x                                                       ; b21a: bd ac 11    ...
     bpl cb24d                                                         ; b21d: 10 2e       ..
+IF CODE_SQUASH
+    jsr test_drive_number
+ELSE
     lda l11b6,x                                                       ; b21f: bd b6 11    ...
     and #&e0                                                          ; b222: 29 e0       ).
     cmp current_drive_number                                          ; b224: cd 17 11    ...
+ENDIF
     bne cb24d                                                         ; b227: d0 24       .$
     lda l11e8,x                                                       ; b229: bd e8 11    ...
     cmp l1114                                                         ; b22c: cd 14 11    ...
@@ -9093,9 +9145,13 @@ ENDIF
 .loop_cb46a
     lda l11ac,x                                                       ; b46a: bd ac 11    ...
     beq cb479                                                         ; b46d: f0 0a       ..
+IF CODE_SQUASH
+    jsr test_drive_number
+ELSE
     lda l11b6,x                                                       ; b46f: bd b6 11    ...
     and #&e0                                                          ; b472: 29 e0       ).
     cmp current_drive_number                                          ; b474: cd 17 11    ...
+ENDIF
     beq cb48e                                                         ; b477: f0 15       ..
 ; &b479 referenced 1 time by &b46d
 .cb479
@@ -9103,8 +9159,12 @@ ENDIF
     bpl loop_cb46a                                                    ; b47a: 10 ee       ..
 ; &b47c referenced 1 time by &9c26
 .sub_cb47c
+IF CODE_SQUASH
+    jsr get_drive_lo_in_x
+ELSE
     lda current_drive_number                                          ; b47c: ad 17 11    ...
     jsr move_drive_number_lo_return_in_x                              ; b47f: 20 79 b5     y.
+ENDIF
     lda l0ffb                                                         ; b482: ad fb 0f    ...
     sta l1121,x                                                       ; b485: 9d 21 11    .!.
     lda l0ffc                                                         ; b488: ad fc 0f    ...
@@ -9114,8 +9174,12 @@ ENDIF
     jsr sub_cb4bf                                                     ; b48e: 20 bf b4     ..
 ; &b491 referenced 1 time by &b50d
 .cb491
+IF CODE_SQUASH
+    jsr get_drive_lo_in_x
+ELSE
     lda current_drive_number                                          ; b491: ad 17 11    ...
     jsr move_drive_number_lo_return_in_x                              ; b494: 20 79 b5     y.
+ENDIF
     lda l0ffb                                                         ; b497: ad fb 0f    ...
     cmp l1121,x                                                       ; b49a: dd 21 11    .!.
     bne cb4ae                                                         ; b49d: d0 0f       ..
@@ -9168,8 +9232,12 @@ ENDIF
 ; &b4f5 referenced 4 times by &88cf, &9ffd, &a252, &b551
 .sub_cb4f5
     jsr sub_cb4bf                                                     ; b4f5: 20 bf b4     ..
+IF CODE_SQUASH
+    jsr get_drive_lo_in_x
+ELSE
     lda current_drive_number                                          ; b4f8: ad 17 11    ...
     jsr move_drive_number_lo_return_in_x                              ; b4fb: 20 79 b5     y.
+ENDIF
     jsr sub_cb510                                                     ; b4fe: 20 10 b5     ..
     eor l10c2                                                         ; b501: 4d c2 10    M..
     beq cb4f4                                                         ; b504: f0 ee       ..
@@ -9554,10 +9622,8 @@ ENDIF
     lda l11c0,x                                                       ; b795: bd c0 11    ...
     adc l00ca                                                         ; b798: 65 ca       e.
     sta osword_control_block + 7                                      ; b79a: 8d 1c 10    ...
-; the lda l11b6,x command also gets the drive number.
     lda l11b6,x                                                       ; b79d: bd b6 11    ...
     adc l00cb                                                         ; b7a0: 65 cb       e.
-; KLNOTE: drive gets stripped from sta osword_control_block + 6 later
     sta osword_control_block + 6                                      ; b7a2: 8d 1b 10    ...
     ldy #4                                                            ; b7a5: a0 04       ..
 ; &b7a7 referenced 1 time by &b7ae
@@ -9567,7 +9633,6 @@ ENDIF
     dey                                                               ; b7ad: 88          .
     bne loop_cb7a7                                                    ; b7ae: d0 f7       ..
     sty current_drive_number                                          ; b7b0: 8c 17 11    ...
-; KLNOTE: drive gets added back in at get_drive_clear_y_then_initiate_drive_communications. 
     sty osword_control_block + 9                                      ; b7b3: 8c 1e 10    ...
     sty osword_control_block + 10                                     ; b7b6: 8c 1f 10    ...
     sty osword_control_block + 11                                     ; b7b9: 8c 20 10    . .
@@ -10802,9 +10867,13 @@ ENDIF
 
 ; &beff referenced 1 time by &bb8f
 .cbeff
+IF CODE_SQUASH
+    jsr get_drive_number_in_a
+ELSE
     ldy #6                                                            ; beff: a0 06       ..
-    lda (scsi_command_control_block_addr),y                           ; bf01: b1 b0       ..
-    ora current_drive_number                                          ; bf03: 0d 17 11    ...
+    lda (scsi_command_control_block_addr),y
+    ora current_drive_number
+ENDIF
     sta l00a6                                                         ; bf06: 85 a6       ..
     and #&1f                                                          ; bf08: 29 1f       ).
     beq cbf0f                                                         ; bf0a: f0 03       ..
