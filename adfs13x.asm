@@ -806,8 +806,8 @@ IF CODE_SQUASH
     jsr get_drive_number_in_a
 ELSE
     ldy #6                                                            ; 80d2: a0 06       ..
-    lda (scsi_command_control_block_addr),y
-    ora current_drive_number
+    lda (scsi_command_control_block_addr),y                           ; 80d4: b1 b0       ..
+    ora current_drive_number                                          ; 80d6: 0d 17 11    ...
 ENDIF
     sta l10d2                                                         ; 80d9: 8d d2 10    ...
     iny                                                               ; 80dc: c8          .
@@ -833,8 +833,8 @@ IF CODE_SQUASH
     jsr get_drive_number_in_a
 ELSE
     ldy #6                                                            ; 80ed: a0 06       ..
-    lda (scsi_command_control_block_addr),y
-    ora current_drive_number
+    lda (scsi_command_control_block_addr),y                           ; 80ef: b1 b0       ..
+    ora current_drive_number                                          ; 80f1: 0d 17 11    ...
 ENDIF
     bmi setup_floppy_command_block_table                              ; 80f4: 30 d6       0.
     jsr clear_y_then_initiate_drive_communications                    ; 80f6: 20 65 80     e.
@@ -867,8 +867,8 @@ IF CODE_SQUASH
     jsr get_drive_number_in_a
 ELSE
     iny                                                               ; 811b: c8          .
-    lda (scsi_command_control_block_addr),y
-    ora current_drive_number
+    lda (scsi_command_control_block_addr),y                           ; 811c: b1 b0       ..
+    ora current_drive_number                                          ; 811e: 0d 17 11    ...
 ENDIF
     sta l1133                                                         ; 8121: 8d 33 11    .3.
 IF SCSI_MOD
@@ -6196,10 +6196,6 @@ IF HI(argument_string_table) != HI(argument_string_table_end)
 ENDIF
 ENDIF
 
-; Temporarily preventing routine from trying to stop all 4 drives
-; because trying to stop a non existent drive will currently cause
-; a not found error. For now, this routine will only stop the
-; currently mounted drive.
 .bye_command
     lda current_drive_number                                          ; a0c3: ad 17 11    ...
     pha                                                               ; a0c6: 48          H
@@ -10871,8 +10867,8 @@ IF CODE_SQUASH
     jsr get_drive_number_in_a
 ELSE
     ldy #6                                                            ; beff: a0 06       ..
-    lda (scsi_command_control_block_addr),y
-    ora current_drive_number
+    lda (scsi_command_control_block_addr),y                           ; bf01: b1 b0       ..
+    ora current_drive_number                                          ; bf03: 0d 17 11    ...
 ENDIF
     sta l00a6                                                         ; bf06: 85 a6       ..
     and #&1f                                                          ; bf08: 29 1f       ).
