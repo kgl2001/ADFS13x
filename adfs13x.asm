@@ -823,8 +823,8 @@ ENDIF
     rts                                                               ; 80ec: 60          `
 
 IF SCSI_MOD
-.indirect_to_c81b1
-    jmp c81b1
+.indirect_to_c81af
+    jmp c81af
 ENDIF
 
 ; &80ed referenced 1 time by &80ca
@@ -839,7 +839,7 @@ ENDIF
     bmi setup_floppy_command_block_table                              ; 80f4: 30 d6       0.
     jsr clear_y_then_initiate_drive_communications                    ; 80f6: 20 65 80     e.
 IF SCSI_MOD
-    bcc indirect_to_c81b1
+    bcc indirect_to_c81af
 ENDIF
     iny                                                               ; 80f9: c8          .
     lda (scsi_command_control_block_addr),y                           ; 80fa: b1 b0       ..
@@ -1172,7 +1172,7 @@ ENDIF
     cmp #&65 ; 'e'                                                    ; 829e: c9 65       .e
     beq restore_drive_number_then_raise_error                         ; 82a0: f0 ef       ..
     cmp #&6f ; 'o'                                                    ; 82a2: c9 6f       .o
-    bne c82b9                                                         ; 82a4: d0 13       ..
+    bne drive_disc_error                                              ; 82a4: d0 13       ..
 ; &82a6 referenced 1 time by &8086
 .c82a6
     lda #osbyte_acknowledge_escape                                    ; 82a6: a9 7e       .~
@@ -1182,13 +1182,9 @@ ENDIF
     equs &11, "Escape", 0                                             ; 82b1: 11 45 73... .Es
 
 ; &82b9 referenced 1 time by &82a4
-.c82b9
+.drive_disc_error
     cmp #4                                                            ; 82b9: c9 04       ..
     bne c82d1                                                         ; 82bb: d0 14       ..
-; KLTODO: Possibly need caller to jmp to &82b9 instead of 82bd???  
-IF SCSI_MOD
-.drive_not_ready_error
-ENDIF
     jsr ReloadFSMandDIR_ThenBRK                                       ; 82bd: 20 48 83     H.
     equs &cd, "Drive not ready", 0                                    ; 82c0: cd 44 72... .Dr
 
@@ -3401,6 +3397,11 @@ ENDIF
     jsr c8f86                                                         ; 8f80: 20 86 8f     ..
     jmp c8c5c                                                         ; 8f83: 4c 5c 8c    L\.
 
+IF CODE_SQUASH
+.call_84b5_then_fall_through_to_8f86
+    jsr c84b5
+ENDIF
+
 ; &8f86 referenced 17 times by &897f, &8f80, &90fb, &9238, &96ac, &97d4, &99c3, &a007, &a273, &a5df, &a5f8, &a663, &a6c4, &a933, &af4f, &b35d, &b462
 .c8f86
     jsr sub_ca6de                                                     ; 8f86: 20 de a6     ..
@@ -3808,8 +3809,12 @@ ENDIF
     lda l00b7                                                         ; 922f: a5 b7       ..
     cmp #&16                                                          ; 9231: c9 16       ..
     bne c921f                                                         ; 9233: d0 ea       ..
+IF CODE_SQUASH
+    jsr call_84b5_then_fall_through_to_8f86
+ELSE
     jsr c84b5                                                         ; 9235: 20 b5 84     ..
     jsr c8f86                                                         ; 9238: 20 86 8f     ..
+ENDIF
     jmp c89d0                                                         ; 923b: 4c d0 89    L..
 
 .my_OSFILE
@@ -6021,6 +6026,7 @@ ENDIF
     equb >(star_run_command-1)                                        ; 9f8b: a3          .
     equb <(star_run_command-1)                                        ; 9f8c: 98          .
 
+; Relocated to avoid page boundary issues.
 IF SCSI_MOD = FALSE
 .argument_string_table
 .list_spec_txt
@@ -6205,6 +6211,25 @@ ENDIF
     jsr close_command                                                 ; a0cb: 20 b3 b1     ..
 ; &a0ce referenced 1 time by &a0c9
 .ca0ce
+IF SCSI_MOD
+; This second call is to make sure that a drive that has not been
+; previously mounted / initialised will stop when requested.
+; The first call will do the initialisation required to enable
+; this second unit stop command to work.
+; This is really just a work around. Still need to figure out why
+; this is happening.
+;
+; A similar issue also seems to crop up on a 2 drive system
+; (drive 0 & 1) if you reset the computer, issue a *BYE command,
+; *MOUNT1, and then try to *RUN a program from drive 1. You get a
+; Disc error 70 0:000200 as ADFS wrongly tries to access drive 0,
+; instead of *RUNing the program from drive 1 (or getting a Not
+; found error if the file doesn't exist). LOAD / *LOAD etc seem to
+; be unaffected. Suspect this issue is in the .star_run_command
+; code somewhere.
+    jsr bye_command_osword_call
+    jsr bye_command_osword_call
+ELSE
     lda #&60 ; '`'                                                    ; a0ce: a9 60       .`
     sta current_drive_number                                          ; a0d0: 8d 17 11    ...
 ; &a0d3 referenced 1 time by &a0e3
@@ -6212,18 +6237,12 @@ ENDIF
     ldx #<osword_1b_stop_control_block                                ; a0d3: a2 ea       ..
     ldy #>osword_1b_stop_control_block                                ; a0d5: a0 a0       ..
     jsr do_osword_command_with_control_block_in_xy                    ; a0d7: 20 89 80     ..
-IF SCSI_MOD
-; This second call is to make sure that a drive that has not been
-; previously mounted / initialised will stop when requested.
-; The first call will do the initialisation required to enable
-; this second unit stop command to work.
-    jsr do_osword_command_with_control_block_in_xy                    ; a0d7: 20 89 80     ..
-ENDIF
     lda current_drive_number                                          ; a0da: ad 17 11    ...
     sec                                                               ; a0dd: 38          8
     sbc #&20 ; ' '                                                    ; a0de: e9 20       .
     sta current_drive_number                                          ; a0e0: 8d 17 11    ...
     bcs loop_ca0d3                                                    ; a0e3: b0 ee       ..
+ENDIF
     pla                                                               ; a0e5: 68          h
     sta current_drive_number                                          ; a0e6: 8d 17 11    ...
     rts                                                               ; a0e9: 60          `
@@ -6231,7 +6250,22 @@ ENDIF
 .osword_1b_stop_control_block
     equb   0,   0, &17, &ff, &ff, &1b,   0,   0,   0,   0,   0        ; a0ea: 00 00 17... ...
 
-
+IF SCSI_MOD
+.bye_command_osword_call
+    lda #&60 ; '`'
+    sta current_drive_number
+; &a0d3 referenced 1 time by &a0e3
+.loop_ca0d3
+    ldx #<osword_1b_stop_control_block
+    ldy #>osword_1b_stop_control_block
+    jsr do_osword_command_with_control_block_in_xy
+    lda current_drive_number
+    sec
+    sbc #&20 ; ' '
+    sta current_drive_number
+    bcs loop_ca0d3
+    rts
+ENDIF
 ; 
 ; **************************************************************
 ; Notes:
@@ -7799,12 +7833,13 @@ ENDIF
     jmp ca976                                                         ; aac3: 4c 76 a9    Lv.
 
 ; We arrive here with either 08 (read) or 0a (write) in A.
+; and scsi_command_control_block_addr in X
 ; &aac6 referenced 2 times by &ab4f, &acb4
 .scsi_command_bget_bput_sector
     pha                                                               ; aac6: 48          H
     jsr cli_wait_for_cd_equal_zero                                    ; aac7: 20 05 83     ..
 IF SCSI_MOD
-    lda current_drive_number   ; get drive number
+    jsr get_drive_number_in_a
 ENDIF
     jsr initiate_drive_communications                                 ; aaca: 20 67 80     g.
     pla                                                               ; aacd: 68          h
@@ -9130,8 +9165,12 @@ ENDIF
     lda l1134,x                                                       ; b459: bd 34 11    .4.
     iny                                                               ; b45c: c8          .
     sta (l00b8),y                                                     ; b45d: 91 b8       ..
+IF CODE_SQUASH
+    jsr call_84b5_then_fall_through_to_8f86
+ELSE
     jsr c84b5                                                         ; b45f: 20 b5 84     ..
     jsr c8f86                                                         ; b462: 20 86 8f     ..
+ENDIF
     jmp cb3e4                                                         ; b465: 4c e4 b3    L..
 
 ; &b468 referenced 1 time by &88b5
